@@ -48,8 +48,13 @@ impl Tab {
                     .as_deref()
                     .or_else(|| terminal.effective_agent_label())?
                     .to_string();
+                // Prefer a user-set manual_label (e.g. `herdr pane rename`) so the
+                // Agents panel row follows the rename, mirroring border_label. See
+                // https://github.com/ogulcancelik/herdr/discussions/476.
                 let agent_label = terminal
-                    .effective_display_agent()
+                    .manual_label
+                    .clone()
+                    .or_else(|| terminal.effective_display_agent())
                     .unwrap_or_else(|| fallback_agent_label.clone());
                 let presentation = terminal.effective_presentation();
                 Some(PaneDetail {
@@ -214,6 +219,31 @@ mod tests {
         assert_eq!(
             labels,
             vec![("planner".into(), "planner".into(), Some(Agent::Pi))]
+        );
+    }
+
+    #[test]
+    fn pane_details_prefers_manual_label_over_detected_agent_label() {
+        // Mirrors border_label_prefers_manual_label_over_agent_label: after
+        // `herdr pane rename` sets manual_label, the Agents panel row should
+        // follow it instead of the detected agent label (discussion #476).
+        let ws = Workspace::test_new("test");
+        let root_pane = ws.tabs[0].root_pane;
+        let mut terminals = HashMap::new();
+        let mut terminal = terminal_for_pane(&ws, root_pane);
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Idle);
+        terminal.set_manual_label("reviewer".into());
+        terminals.insert(terminal.id.clone(), terminal);
+
+        let labels: Vec<_> = ws
+            .pane_details(&terminals)
+            .into_iter()
+            .map(|detail| (detail.label, detail.agent_label, detail.agent))
+            .collect();
+
+        assert_eq!(
+            labels,
+            vec![("reviewer".into(), "reviewer".into(), Some(Agent::Claude))]
         );
     }
 
